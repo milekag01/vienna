@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 # vienna spawn — create a fully isolated environment with worktrees
+# With --ticket: also fetches Linear context, injects task file, opens Cursor agent
 
 source "$VIENNA_DIR/lib/ports.sh"
 source "$VIENNA_DIR/lib/infra.sh"
@@ -8,10 +9,14 @@ source "$VIENNA_DIR/lib/env.sh"
 source "$VIENNA_DIR/lib/deps.sh"
 source "$VIENNA_DIR/lib/migrate.sh"
 source "$VIENNA_DIR/lib/context.sh"
+source "$VIENNA_DIR/lib/linear.sh"
+source "$VIENNA_DIR/lib/run.sh"
 
 cmd_spawn() {
     local name=""
     local branch=""
+    local ticket=""
+    local new_window="false"
 
     # Parse arguments
     while [[ $# -gt 0 ]]; do
@@ -20,8 +25,18 @@ cmd_spawn() {
                 branch="$2"
                 shift 2
                 ;;
+            --ticket|-t)
+                ticket="$2"
+                shift 2
+                ;;
+            --new-window)
+                new_window="true"
+                shift
+                ;;
             --help|-h)
                 echo "Usage: vienna spawn <name> --branch <branch>"
+                echo "       vienna spawn --ticket <ID-or-URL>"
+                echo "       vienna spawn --ticket <ID-or-URL> --new-window"
                 echo ""
                 echo "Creates a fully isolated environment:"
                 echo "  - Git worktrees for all repos on the specified branch"
@@ -29,6 +44,22 @@ cmd_spawn() {
                 echo "  - Unique ports (no conflicts with other instances)"
                 echo "  - Generated .env files with correct configuration"
                 echo "  - Migrations applied automatically"
+                echo ""
+                echo "With --ticket:"
+                echo "  - Fetches ticket details from Linear"
+                echo "  - Auto-derives instance name and branch from ticket"
+                echo "  - Writes task context (.cursor/rules/task.mdc)"
+                echo "  - Opens an Agent chat in your current Cursor (default)"
+                echo ""
+                echo "Flags:"
+                echo "  --new-window    Open a separate Cursor window instead of an agent chat"
+                echo "                  (true hard isolation — agent can only see the instance)"
+                echo ""
+                echo "Examples:"
+                echo "  vienna spawn my-feature --branch feature-auth"
+                echo "  vienna spawn --ticket COM-4521"
+                echo "  vienna spawn --ticket COM-4521 --new-window"
+                echo "  vienna spawn --ticket https://linear.app/commenda/issue/COM-4521/some-title"
                 return 0
                 ;;
             -*)
@@ -47,14 +78,50 @@ cmd_spawn() {
         esac
     done
 
+    # --- Ticket mode: fetch from Linear, derive name + branch ---
+    if [[ -n "$ticket" ]]; then
+        local identifier
+        identifier=$(linear_parse_ticket_input "$ticket") || return 1
+
+        if ! linear_fetch_ticket "$identifier"; then
+            return 1
+        fi
+
+        # Auto-derive name if not explicitly provided
+        if [[ -z "$name" ]]; then
+            name=$(linear_instance_name "$LINEAR_TICKET_IDENTIFIER")
+        fi
+
+        # In ticket mode, --branch means "base branch to create FROM" (default: main).
+        # The actual worktree branch is always a new ticket-specific branch.
+        local base_branch="${branch:-main}"
+
+        # Always derive a ticket-specific branch (never reuse main/develop directly)
+        if [[ -n "$LINEAR_TICKET_BRANCH" ]]; then
+            branch="$LINEAR_TICKET_BRANCH"
+            log_step "Using Linear's suggested branch: $branch"
+        else
+            branch=$(linear_branch_name "$LINEAR_TICKET_IDENTIFIER" "$LINEAR_TICKET_TITLE")
+            log_step "Auto-generated branch: $branch"
+        fi
+
+        # Store the base branch so worktree.sh knows where to branch from
+        export VIENNA_BASE_BRANCH="$base_branch"
+
+        echo ""
+        log_info "Ticket mode: $LINEAR_TICKET_IDENTIFIER → instance ${BOLD}$name${NC}, branch ${BOLD}$branch${NC} (from $base_branch)"
+        echo ""
+    fi
+
     if [[ -z "$name" ]]; then
         log_error "Instance name is required"
         echo "Usage: vienna spawn <name> --branch <branch>"
+        echo "       vienna spawn --ticket <ID-or-URL>"
         return 1
     fi
 
     if [[ -z "$branch" ]]; then
-        log_error "--branch is required"
+        log_error "--branch is required (or use --ticket to auto-derive)"
         echo "Usage: vienna spawn $name --branch <branch>"
         return 1
     fi
@@ -96,9 +163,12 @@ cmd_spawn() {
     local enterprise_port=$((VIENNA_PORT_BASE_APP_POOL + offset * VIENNA_APP_POOL_SIZE))
     echo ""
 
-    # Step 2: Create worktrees
+    # Step 2: Create worktrees (auto-create branch in ticket mode)
+    local create_branch="false"
+    [[ -n "$ticket" ]] && create_branch="true"
+
     log_info "Creating git worktrees..."
-    if ! worktrees_create "$name" "$branch"; then
+    if ! worktrees_create "$name" "$branch" "$create_branch"; then
         log_error "Failed to create worktrees. Cleaning up..."
         free_ports "$name"
         worktrees_remove "$name"
@@ -192,6 +262,14 @@ EOF
     }
     echo ""
 
+    # Step 9 (ticket mode): Write task context + open Cursor
+    if [[ -n "$ticket" ]]; then
+        echo ""
+        log_info "Writing task context for ${BOLD}$LINEAR_TICKET_IDENTIFIER${NC}..."
+        linear_write_task_context "$VIENNA_INSTANCES/$name" "$instance_config_dir/config.json"
+        echo ""
+    fi
+
     # Done
     echo ""
     log_success "========================================="
@@ -209,16 +287,39 @@ EOF
     echo "  Go API port:         $go_api_port"
     echo "  Enterprise port:     $enterprise_port"
     echo ""
-    echo "  To start the NestJS backend:"
-    echo "    cd $VIENNA_INSTANCES/$name/commenda-logical-backend"
-    echo "    npm run start:dev"
-    echo ""
-    echo "  To start the Go API:"
-    echo "    cd $VIENNA_INSTANCES/$name/sales-tax-api-2"
-    echo "    make start"
-    echo ""
-    echo "  To start the Enterprise frontend:"
-    echo "    cd $VIENNA_INSTANCES/$name/commenda/apps/enterprise"
-    echo "    pnpm dev -p $enterprise_port"
+
+    if [[ -n "$ticket" ]]; then
+        echo "  Ticket:              $LINEAR_TICKET_IDENTIFIER — $LINEAR_TICKET_TITLE"
+        echo "  Task context:        $VIENNA_INSTANCES/$name/.cursor/rules/task.mdc"
+        echo ""
+
+        # Auto-start all services (CLB, Sales Tax API, Enterprise) in new terminal tabs
+        log_info "Starting services for ${BOLD}$name${NC}..."
+        cmd_run "$name" || log_warn "Some services may not have started. You can run 'vienna run $name' manually."
+        echo ""
+
+        # Wait for terminal tabs to settle before opening agent chat
+        log_step "Waiting for services to initialize..."
+        sleep 5
+
+        # Open agent chat (or new window)
+        if [[ "$new_window" == "true" ]]; then
+            linear_open_cursor_window "$VIENNA_INSTANCES/$name"
+        else
+            linear_open_agent_chat "$VIENNA_INSTANCES/$name" "$LINEAR_TICKET_IDENTIFIER" "$LINEAR_TICKET_TITLE"
+        fi
+    else
+        echo "  To start the NestJS backend:"
+        echo "    cd $VIENNA_INSTANCES/$name/commenda-logical-backend"
+        echo "    npm run start:dev"
+        echo ""
+        echo "  To start the Go API:"
+        echo "    cd $VIENNA_INSTANCES/$name/sales-tax-api-2"
+        echo "    make start"
+        echo ""
+        echo "  To start the Enterprise frontend:"
+        echo "    cd $VIENNA_INSTANCES/$name/commenda/apps/enterprise"
+        echo "    pnpm dev -p $enterprise_port"
+    fi
     echo ""
 }

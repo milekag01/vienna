@@ -145,6 +145,7 @@ Vienna/
 ```
 
 Each instance also gets 4 Docker containers (namespaced `vienna-<name>-*`):
+
 - `postgres-nestjs` — NestJS/Prisma database
 - `postgres-go` — Go/Atlas database
 - `redis` — Redis
@@ -156,15 +157,15 @@ Each instance also gets 4 Docker containers (namespaced `vienna-<name>-*`):
 
 Each instance gets a unique offset. No manual config.
 
-| Service | Instance 1 | Instance 2 | Instance 3 |
-|---|---|---|---|
-| PostgreSQL (NestJS) | 5501 | 5502 | 5503 |
-| PostgreSQL (Go) | 5601 | 5602 | 5603 |
-| Redis | 6401 | 6402 | 6403 |
-| LocalStack | 4567 | 4568 | 4569 |
-| NestJS backend | 8101 | 8102 | 8103 |
-| Go API | 8201 | 8202 | 8203 |
-| Enterprise frontend | 3010 | 3020 | 3030 |
+| Service             | Instance 1 | Instance 2 | Instance 3 |
+| ------------------- | ---------- | ---------- | ---------- |
+| PostgreSQL (NestJS) | 5501       | 5502       | 5503       |
+| PostgreSQL (Go)     | 5601       | 5602       | 5603       |
+| Redis               | 6401       | 6402       | 6403       |
+| LocalStack          | 4567       | 4568       | 4569       |
+| NestJS backend      | 8101       | 8102       | 8103       |
+| Go API              | 8201       | 8202       | 8203       |
+| Enterprise frontend | 3010       | 3020       | 3030       |
 
 Freed offsets are reused when you destroy an instance.
 

@@ -37,6 +37,20 @@ VIENNA_AWS_ACCOUNT_ID="000000000000"
 # S3 buckets to create in LocalStack
 VIENNA_S3_BUCKETS=("commenda-dev" "commenda-auto-delete-dev" "sales-tax-bucket-dev")
 
+# --- Secrets (loaded from .vienna-state/secrets.env if present) ---
+VIENNA_LINEAR_API_KEY="${VIENNA_LINEAR_API_KEY:-}"
+
+_vienna_secrets_file="$VIENNA_WORKSPACE/.vienna-state/secrets.env"
+if [[ -f "$_vienna_secrets_file" ]]; then
+    while IFS='=' read -r key value; do
+        [[ -z "$key" || "$key" == \#* ]] && continue
+        value="${value%\"}"
+        value="${value#\"}"
+        export "$key=$value"
+    done < "$_vienna_secrets_file"
+    VIENNA_LINEAR_API_KEY="${VIENNA_LINEAR_API_KEY:-}"
+fi
+
 # SQS queues to create in LocalStack (Go service)
 VIENNA_SQS_QUEUES=(
     "webhook.fifo"

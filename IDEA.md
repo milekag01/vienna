@@ -23,6 +23,7 @@ Each has its own `.env` file with different configuration — database URLs, Red
 This is the real problem. Say you create a git worktree of `sales-tax-api-2` for a second ticket. You now have two checkouts of the code. But the `.env` file in both checkouts has the same `DATABASE_URL=postgresql://localhost:5432/salestax`. Both point at the **same Postgres instance**.
 
 The same is true for every piece of infrastructure:
+
 - Both worktrees talk to the same database
 - Both worktrees push to the same SQS queues
 - Both worktrees connect to the same Redis
@@ -140,6 +141,7 @@ Vienna/
 ```
 
 Docker containers per instance (namespaced with `vienna-<name>-`):
+
 - `postgres-nestjs` — NestJS/Prisma database
 - `postgres-go` — Go/Atlas database
 - `redis` — Redis instance
@@ -151,15 +153,15 @@ Docker containers per instance (namespaced with `vienna-<name>-`):
 
 Each instance gets a unique offset. No manual configuration needed.
 
-| Service | Formula | Instance 1 | Instance 2 | Instance 3 |
-|---|---|---|---|---|
-| PostgreSQL (NestJS) | 5500 + N | 5501 | 5502 | 5503 |
-| PostgreSQL (Go) | 5600 + N | 5601 | 5602 | 5603 |
-| Redis | 6400 + N | 6401 | 6402 | 6403 |
-| LocalStack | 4566 + N | 4567 | 4568 | 4569 |
-| NestJS backend | 8100 + N | 8101 | 8102 | 8103 |
-| Go API | 8200 + N | 8201 | 8202 | 8203 |
-| Enterprise frontend | 3000 + N*10 | 3010 | 3020 | 3030 |
+| Service             | Formula      | Instance 1 | Instance 2 | Instance 3 |
+| ------------------- | ------------ | ---------- | ---------- | ---------- |
+| PostgreSQL (NestJS) | 5500 + N     | 5501       | 5502       | 5503       |
+| PostgreSQL (Go)     | 5600 + N     | 5601       | 5602       | 5603       |
+| Redis               | 6400 + N     | 6401       | 6402       | 6403       |
+| LocalStack          | 4566 + N     | 4567       | 4568       | 4569       |
+| NestJS backend      | 8100 + N     | 8101       | 8102       | 8103       |
+| Go API              | 8200 + N     | 8201       | 8202       | 8203       |
+| Enterprise frontend | 3000 + N\*10 | 3010       | 3020       | 3030       |
 
 Freed offsets are reused when instances are destroyed.
 

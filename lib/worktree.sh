@@ -8,6 +8,7 @@ source "$VIENNA_DIR/lib/config.sh"
 worktrees_create() {
     local name="$1"
     local branch="$2"
+    local create_branch="${3:-false}"
     local instance_dir="$VIENNA_INSTANCES/$name"
 
     ensure_dir "$instance_dir"
@@ -25,12 +26,27 @@ worktrees_create() {
         local branch_to_use="$branch"
         if ! git -C "$repo_dir" rev-parse --verify "$branch" &>/dev/null 2>&1; then
             # Try remote
+            git -C "$repo_dir" fetch origin 2>/dev/null || true
             if git -C "$repo_dir" rev-parse --verify "origin/$branch" &>/dev/null 2>&1; then
-                log_step "$repo: fetching branch $branch from origin..."
-                git -C "$repo_dir" fetch origin "$branch" 2>/dev/null || true
+                log_step "$repo: tracking remote branch $branch"
             else
-                log_warn "$repo: branch '$branch' not found, using current branch"
-                branch_to_use=$(git -C "$repo_dir" branch --show-current)
+                if [[ "$create_branch" == "true" ]]; then
+                    local base_branch="${VIENNA_BASE_BRANCH:-main}"
+                    log_step "$repo: creating new branch '$branch' from $base_branch"
+                    git -C "$repo_dir" worktree add -b "$branch" "$worktree_dir" "origin/$base_branch" 2>&1 | while IFS= read -r line; do
+                        echo "    $line"
+                    done
+                    if [[ -d "$worktree_dir" ]]; then
+                        log_success "  $repo: worktree created on new branch $branch"
+                        continue
+                    else
+                        log_error "Failed to create worktree for $repo"
+                        return 1
+                    fi
+                else
+                    log_warn "$repo: branch '$branch' not found, using current branch"
+                    branch_to_use=$(git -C "$repo_dir" branch --show-current)
+                fi
             fi
         fi
 
