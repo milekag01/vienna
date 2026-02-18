@@ -1,137 +1,169 @@
 # Vienna
 
-**One command. Your whole product, running locally, ready to use.**
+**One command. Isolated environment. Parallel tickets. Zero conflicts.**
 
-Vienna lets anyone on your team — engineers, product managers, designers, QA — run the product on their own computer with a single command. No setup guides. No asking engineering for help. No waiting.
-
-Need to test a new feature? One command. Need to switch to a different version to compare? One command. Need to go back to what you were looking at before? One command. Everything is saved, everything is restored, nothing breaks.
+Vienna creates fully isolated development environments for every ticket you work on — separate databases, separate queues, separate ports, separate code checkouts. Pass a Linear ticket and it spawns the whole stack, starts all services, opens an AI agent in Cursor, and the agent starts solving it. Five tickets at once, five environments, five agents, no interference.
 
 ---
 
-## The Problem Today
+## The Problem
 
-Getting the product running locally is painful. Here's what it looks like right now:
+### Worktrees alone aren't enough
 
-**For product managers and QA:**
-You want to test a feature that's in progress. You ask an engineer to set it up on your machine. They're busy. You wait. When they finally help, it takes 30 minutes of terminal commands, configuration files, and troubleshooting. Next week, you need to test a different feature — same story.
+You can `git worktree add` to get a second checkout, but that solves maybe 10% of the problem. The real issues:
 
-**For engineers:**
-You're working on Feature A. Your teammate asks you to quickly look at a bug on the main version. You can't just switch — your local setup has changes that are incompatible with the main version. Switching means undoing your work, reconfiguring everything, and hoping you can get back to where you were. It's a 20-minute detour that should take 20 seconds.
+- **Three codebases, not one.** Commenda has `commenda` (frontend monorepo), `commenda-logical-backend` (NestJS API), and `sales-tax-api-2` (Go microservice). A worktree for one repo is useless without worktrees for all three, configured to talk to each other.
 
-**For teams using AI coding agents:**
-You want two AI agents to work on two different tasks simultaneously. They can't — they'd both be changing the same files, the same databases, the same configuration. One would overwrite the other. So they have to work one at a time, which defeats the purpose.
+- **Shared infrastructure destroys isolation.** Two worktrees both pointing at the same Postgres means one agent's migration breaks the other's data. Same Redis, same queues — one agent's background job eats the other's messages. Same ports — only one can run at a time.
+
+- **Environment files are a minefield.** Each service has 50+ env vars. Database URLs, Redis hosts, SQS queue ARNs, service-to-service URLs, API keys — all hardcoded to default ports. Changing one and forgetting another means silent failures.
+
+- **Nobody wants to do this setup manually.** An engineer could theoretically set all this up by hand: create 3 worktrees, spin up 2 Postgres containers on custom ports, Redis on a custom port, LocalStack with 22 queues, generate .env files, patch config files, run migrations. That's 45 minutes of setup per environment. Nobody does it.
+
+### What actually happens today
+
+**Engineer A** is working on filing calculations. **Engineer B** needs to fix a registration bug. They can't both work locally at the same time without stepping on each other's databases. One of them works on staging instead, which is slow, shared, and unreliable.
+
+**AI agents** are even worse. You want two Cursor agents working on two tickets simultaneously. They'd both be mutating the same database, the same files, the same queue messages. So they work sequentially — one at a time — defeating the purpose.
 
 ---
 
 ## How Vienna Fixes This
 
-Vienna creates a separate, complete copy of your product's environment for every task or version you're working on. Each copy has its own databases, its own configuration, its own everything. They don't interfere with each other.
-
-Think of it like browser tabs. Each tab is its own world. You can have five tabs open, switch between them instantly, and closing one doesn't affect the others. Vienna does the same thing, but for your entire product stack.
-
-### Switch between versions instantly
+### One command, everything isolated
 
 ```
-vienna switch main
+vienna spawn --ticket PLAT-2086 --branch main
 ```
 
-You're now running the main version. All your data, all your configuration — exactly as it should be for this version.
+This single command:
+
+1. **Fetches the ticket** from Linear (title, description, priority, acceptance criteria)
+2. **Creates a new branch** from `main` using Linear's suggested branch name
+3. **Creates git worktrees** for all three repos on that branch
+4. **Starts isolated infrastructure** — its own Postgres (x2), Redis, and LocalStack with 22 SQS queues and 3 S3 buckets
+5. **Generates .env files** — every service configured with instance-specific ports, database names, queue URLs
+6. **Patches service configs** — NestJS backend.config.ts rewritten so services talk to each other on the right ports
+7. **Installs dependencies** — npm, pnpm, go modules, Prisma client generation
+8. **Runs all migrations** — Prisma for NestJS, Atlas for Go, seeds admin API tokens
+9. **Starts all services** — NestJS backend, Go API, and Enterprise frontend in new terminal tabs
+10. **Opens a new AI agent** in Cursor with full ticket context and starts solving immediately
+
+Each environment gets unique ports. Instance 1 gets Postgres on 5501/5601, Redis on 6401. Instance 2 gets 5502/5602/6402. No collisions. Run five simultaneously.
+
+### Without a ticket — plain spawn
 
 ```
-vienna switch feature-new-dashboard
+vienna spawn my-feature --branch feature-auth
 ```
 
-Now you're running the new dashboard feature. The main version is paused in the background, untouched. Switch back anytime.
+Same isolation, just without the Linear integration and AI agent. You get the environment, you work in it manually.
 
-### Test any feature without help
+### The full lifecycle
 
-A product manager wants to see the new onboarding flow that's being built:
-
+```bash
+vienna spawn --ticket PLAT-2086              # Create everything, agent starts working
+vienna list                                   # See all running instances
+vienna info plat-2086                         # See ports, DB URLs, connection details
+vienna run plat-2086                          # Start services (auto in ticket mode)
+vienna stop plat-2086                         # Pause infrastructure, keep data
+vienna start plat-2086                        # Resume where you left off
+vienna destroy plat-2086                      # Tear everything down when done
 ```
-vienna switch feature-new-onboarding
-```
-
-That's it. The full product starts up with the right version, the right data, and the right configuration. No Slack messages. No engineering time. No setup guide.
-
-### Let AI agents work in parallel
-
-```
-vienna spawn --ticket LIN-4521
-vienna spawn --ticket LIN-4522
-```
-
-Each ticket gets its own isolated workspace. An AI agent picks up the task, understands what needs to be done (pulled directly from the ticket), and works on it independently. Two agents working on two tickets at the same time, without stepping on each other.
 
 ---
 
-## What Vienna Does
+## What Gets Created
 
-### One-Command Setup
-Run a single command to get the full product running locally. Vienna handles all the behind-the-scenes complexity — databases, services, configuration — automatically.
+When you `vienna spawn`, here's what physically exists on your machine:
 
-### Instant Context Switching
-Switch between different versions or feature branches without losing your place. Each version's state is preserved separately. Coming back to where you left off takes seconds, not minutes.
+```
+Vienna/
+├── instances/
+│   ├── plat-2086/                        # One instance
+│   │   ├── commenda/                     # Git worktree (frontend monorepo)
+│   │   ├── commenda-logical-backend/     # Git worktree (NestJS backend)
+│   │   ├── sales-tax-api-2/             # Git worktree (Go microservice)
+│   │   ├── .cursor/rules/task.mdc       # AI agent task context (auto-loaded)
+│   │   ├── .vienna-task.json            # Machine-readable task context
+│   │   └── .vienna-instance.json        # Instance marker
+│   │
+│   └── plat-2087/                        # Another instance (fully independent)
+│       ├── commenda/
+│       ├── commenda-logical-backend/
+│       └── sales-tax-api-2/
+│
+├── .vienna-state/                         # Runtime state (gitignored)
+│   ├── registry.json                     # Port allocation registry
+│   ├── secrets.env                       # API keys (gitignored)
+│   └── instances/
+│       └── plat-2086/config.json         # Ports, branch, creation time
+│
+└── vienna/                                # The CLI itself
+    ├── bin/vienna.sh                     # Entry point
+    ├── lib/                              # Shell modules
+    ├── docker/                           # Compose + LocalStack init
+    └── overlays/                         # File patches for worktrees
+```
 
-### No Engineering Bottleneck
-Product managers, designers, and QA can test any in-progress feature themselves. No need to understand technical details. No need to ask an engineer for help. One command gets you a working product.
-
-### Side-by-Side Comparison
-Run multiple versions of the product at the same time. Compare the current version against a proposed change. Test two different features simultaneously. Each runs independently without conflicts.
-
-### AI Agent Workspaces
-Give each AI coding agent its own isolated workspace. The agent gets the task description, the code, and a fully working environment. Multiple agents work on different tasks in parallel — no conflicts, no overwriting, no waiting.
-
-### Save and Restore
-Take a snapshot of your current state at any point. Try something risky. If it doesn't work, restore back to where you were. Share a snapshot with a teammate so they can see exactly what you're seeing.
-
-### Team-Ready
-The configuration is shared across the team. When one person sets up the templates, everyone benefits. New team members get a working environment on their first day with one command.
-
----
-
-## Day in the Life
-
-**Sarah, Product Manager:**
-Sarah needs to review a feature before the sprint demo. She opens her terminal, types `vienna switch feature-payment-redesign`, and the product starts up with the new payment flow. She tests it, finds an edge case, and files a bug. Total time: 3 minutes. Engineering time required: zero.
-
-**Raj, Backend Engineer:**
-Raj is building a new tax calculation feature. His manager pings him about a bug on the production version. He types `vienna switch main`, reproduces the bug, pushes a fix, and types `vienna switch feature-tax-calc` to go back to his feature. His database, his test data, his progress — all exactly where he left it.
-
-**The AI Agents:**
-The team has 5 tickets labeled "auto-agent" in Linear. Vienna spins up 5 isolated workspaces, one per ticket. Each AI agent reads its ticket, writes the code, runs the tests, and creates a pull request. All five work simultaneously. Engineers review the PRs the next morning over coffee.
-
----
-
-## How It Works (The Simple Version)
-
-Vienna runs behind the scenes on your computer using Docker (a tool that creates isolated containers — think of them as tiny virtual computers). When you switch to a different version, Vienna:
-
-1. Saves everything about your current version (databases, configuration)
-2. Sets up the new version with its own separate databases and configuration
-3. Starts the product with everything connected and ready
-
-When you switch back, it reverses the process. Nothing is lost. Nothing is shared between versions unless you want it to be.
-
-You don't need to understand Docker, databases, or any of the internals. You just use the commands.
+Docker containers per instance (namespaced with `vienna-<name>-`):
+- `postgres-nestjs` — NestJS/Prisma database
+- `postgres-go` — Go/Atlas database
+- `redis` — Redis instance
+- `localstack` — SQS queues + S3 buckets
 
 ---
 
-## Who Is It For
+## Port Allocation
 
-**Product managers** who want to test features without waiting for engineering or following outdated setup docs.
+Each instance gets a unique offset. No manual configuration needed.
 
-**QA teams** who need to switch between versions quickly and test multiple features side by side.
+| Service | Formula | Instance 1 | Instance 2 | Instance 3 |
+|---|---|---|---|---|
+| PostgreSQL (NestJS) | 5500 + N | 5501 | 5502 | 5503 |
+| PostgreSQL (Go) | 5600 + N | 5601 | 5602 | 5603 |
+| Redis | 6400 + N | 6401 | 6402 | 6403 |
+| LocalStack | 4566 + N | 4567 | 4568 | 4569 |
+| NestJS backend | 8100 + N | 8101 | 8102 | 8103 |
+| Go API | 8200 + N | 8201 | 8202 | 8203 |
+| Enterprise frontend | 3000 + N*10 | 3010 | 3020 | 3030 |
 
-**Engineers** who work on multiple things at once and are tired of losing time to environment setup every time they switch context.
-
-**Teams using AI agents** who want multiple agents working on different tasks simultaneously without conflicts.
-
-**New team members** who should be productive on day one, not day three.
+Freed offsets are reused when instances are destroyed.
 
 ---
 
-## What's Coming Next
+## AI Agent Integration
 
-- **Cloud workspaces.** Run environments on remote servers instead of your laptop — faster, more powerful, always available.
-- **Automatic AI agents.** Create a ticket, label it, and an AI agent picks it up, sets up its own workspace, and starts working — no human needed to kick it off.
-- **Shareable environments.** Package your exact setup — code version, database state, everything — and send it to a teammate. They open it and see exactly what you see.
+When you spawn with `--ticket`:
+
+1. **Linear API** fetches the full ticket — title, description, priority, labels, assignee, comments
+2. **Task context file** (`.cursor/rules/task.mdc`) is written with:
+   - Hard workspace boundary rules — "you MUST NOT touch files outside this instance"
+   - The ticket description and acceptance criteria
+   - All instance-specific ports and database URLs
+   - Guidelines for committing and testing
+3. **A new Cursor agent chat** opens automatically in your current window
+4. The agent reads the task context and starts solving the ticket immediately
+5. You see it in your agent list — switch to it anytime to review or guide
+
+Each agent works in its own worktree, talks to its own databases, runs on its own ports. Five agents, five tickets, zero conflicts.
+
+---
+
+## Who This Is For
+
+**Engineers working on multiple tickets.** Switch context without losing state. Each ticket has its own databases, its own migrations, its own running services.
+
+**Teams using AI coding agents.** Give each agent a ticket and a fully isolated environment. They work in parallel without stepping on each other.
+
+**Anyone tired of environment setup.** One command. Everything works. No 45-minute setup guides.
+
+---
+
+## What's Next
+
+- **`vienna switch`** — Lighter-weight mode for human developers (infra isolation, shared code checkout)
+- **Snapshots and restore** — `pg_dump`/`pg_restore` to save and roll back database state
+- **Garbage collection** — Auto-destroy instances older than a threshold
+- **Linear webhook automation** — Label a ticket "auto-agent" in Linear, Vienna spawns an agent automatically
+- **Remote environments** — Run on cloud VMs instead of local machine

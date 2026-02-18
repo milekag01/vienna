@@ -227,6 +227,98 @@ NestJS/Go API ports are written to `.env` but you still start those services you
 | `.vienna-state/instances/<name>/config.json` | Per-instance config |
 | `instances/<name>/` | Git worktrees + generated .env files |
 
+---
+
+## Stage 2: Ticket-Driven Agent Spawning
+
+### Setup
+
+1. **Get your Linear API key:**
+   - Go to https://linear.app/settings/api (or: Linear → Settings → API)
+   - Click "Create key", label it "Vienna"
+   - Copy the key (shown only once)
+
+2. **Save it in Vienna's secrets file:**
+   ```bash
+   mkdir -p .vienna-state
+   echo 'VIENNA_LINEAR_API_KEY=lin_api_YOUR_KEY_HERE' >> .vienna-state/secrets.env
+   ```
+
+### Commands
+
+| Command | What it does |
+|---|---|
+| `vienna spawn --ticket COM-4521` | Fetch ticket, create branch, spawn environment, inject task context, open Cursor |
+| `vienna spawn --ticket https://linear.app/.../COM-4521/...` | Same, but from a Linear URL |
+| `vienna spawn --ticket COM-4521 --branch custom-branch` | Ticket mode with explicit branch override |
+
+### Quick Test: Ticket Spawn
+
+```bash
+cd ~/Desktop/Vienna
+
+# 1. Spawn from a ticket
+bash vienna/bin/vienna.sh spawn --ticket COM-4521
+# Expected:
+#   - Fetches ticket from Linear (title, description, priority, labels)
+#   - Auto-derives instance name: "com-4521"
+#   - Auto-derives branch from Linear's suggested branch (or generates one)
+#   - Creates branch if it doesn't exist
+#   - Full spawn flow: worktrees, Docker, .env, migrations
+#   - Writes .cursor/rules/task.mdc with ticket context
+#   - Writes .vienna-task.json with machine-readable context
+#   - Opens Cursor window at instance directory
+
+# 2. Verify task context was written
+cat instances/com-4521/.cursor/rules/task.mdc
+# Expected: Ticket title, description, acceptance criteria, port info
+
+cat instances/com-4521/.vienna-task.json
+# Expected: JSON with ticket, title, description, ports, etc.
+
+# 3. Check it's listed
+bash vienna/bin/vienna.sh list
+
+# 4. Clean up
+bash vienna/bin/vienna.sh destroy com-4521
+```
+
+### How It Works
+
+When you run `vienna spawn --ticket COM-4521`:
+
+1. **Parse input** — Accepts ticket ID (`COM-4521`) or full Linear URL
+2. **Fetch from Linear** — GraphQL API call to get title, description, priority, labels, suggested branch name, assignee, comments
+3. **Derive name + branch** — Instance name: `com-4521`. Branch: Linear's suggested branch, or `com-4521-<slugified-title>`
+4. **Create branch if needed** — If the branch doesn't exist in any repo, creates it from `origin/main`
+5. **Normal spawn flow** — Worktrees, Docker, .env, deps, migrations (exactly like a regular spawn)
+6. **Write task context** — `.cursor/rules/task.mdc` (Cursor reads automatically) + `.vienna-task.json`
+7. **Open Cursor** — `cursor instances/com-4521/` opens a new Cursor window. The agent loads `task.mdc` and knows what to work on
+
+### What the Agent Sees
+
+The `.cursor/rules/task.mdc` file is auto-loaded by Cursor (it has `alwaysApply: true`). The agent gets:
+
+- Ticket title and link
+- Full description
+- Priority, status, labels, assignee
+- All instance ports (so it knows where to test)
+- Working directory and branch info
+- Guidelines for committing
+
+### Secrets File
+
+The file `.vienna-state/secrets.env` is gitignored and stores sensitive values:
+
+```bash
+# .vienna-state/secrets.env
+VIENNA_LINEAR_API_KEY=lin_api_xxxxxxxxxxxxxxxxxxxxx
+```
+
+This is loaded automatically by the CLI at startup.
+
+---
+
 ## Known Limitations
 
 1. **Two instances can't use the same branch** — git worktree restriction. You'll get git's error message.
@@ -241,3 +333,4 @@ NestJS/Go API ports are written to `.env` but you still start those services you
    atlas migrate apply --dir file://database/migrations --url "postgres://salestax:salestax@localhost:<port>/salestax?sslmode=disable"
    ```
 5. **Services aren't auto-started** — Vienna sets up infrastructure (DBs, Redis, AWS) and generates config. You start NestJS/Go yourself from the worktree directories.
+6. **Linear API key required for --ticket** — Without it, you'll get an error with setup instructions.
