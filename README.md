@@ -2,37 +2,39 @@
 
 **Parallel-safe isolated development environments for multi-repo projects.**
 
-Vienna solves a specific problem: you have 3 codebases (a frontend monorepo, a NestJS backend, and a Go microservice) that share databases, Redis, and message queues. You want to work on multiple tickets simultaneously — or have AI agents do it — without them destroying each other's data.
+Vienna solves a specific problem: you have 3 codebases (`commenda`, `commenda-logical-backend`, `sales-tax-api-2`) that each have their own environment configuration, and all three need to run together and talk to each other. Getting that working once is already painful. Getting multiple isolated copies running in parallel — so you or your AI agents can work on several tickets at the same time — is what Vienna automates.
 
 ---
 
 ## The Problem
 
-### Git worktrees aren't enough
+### Three codebases, each with their own config, all need to run together
 
-A git worktree gives you a second checkout of your code. That's it. It doesn't give you a second database. Two worktrees both run Prisma migrations against the same Postgres on port 5432. One agent adds a column, the other drops a table. Your data is gone.
+Each codebase has its own `.env` file defining database URLs, Redis hosts, SQS queue ARNs, API ports, and service-to-service URLs. The NestJS backend needs to know where the Go API lives. The frontend needs to know where the NestJS backend lives. Each service has 50+ env vars. Getting all three running and wired together locally is already a chore for a single instance.
 
-### Everything is shared and everything breaks
+### The environment is shared — even across worktrees
 
-When you have multiple codebases talking to each other through shared infrastructure:
+This is the core problem. Say you create a git worktree of `sales-tax-api-2` for a second ticket. You now have two checkouts of the code. But the `.env` in both has the same `DATABASE_URL=postgresql://localhost:5432/salestax`. Both point at the **same Postgres**.
 
-- **Databases are shared.** Two branches with different migrations corrupt each other. Agent A runs `prisma migrate deploy` and adds a table. Agent B runs a different migration that conflicts. Now both are broken.
+Git worktrees give you isolated code. They do **not** give you an isolated environment. The `.env` belongs to the codebase, and every worktree inherits the same one. So every worktree talks to the same database, same Redis, same SQS queues, same ports.
 
-- **Queues are shared.** Both instances push to the same SQS queues. Agent A's webhook message gets consumed by Agent B's worker. Silent data corruption.
+### Migrations from different branches destroy each other
 
-- **Ports are shared.** You can't run two NestJS backends on port 8000 at the same time. And even if you change one port, you need to update 50+ environment variables that reference it across 3 codebases.
+If you have three tickets each requiring a database migration, and all three agents (or you + two agents) run their migrations against the same Postgres, you get a tangled mess. The migration history has changes from three unrelated branches interleaved. You can't roll back one without rolling back the others. If a ticket gets abandoned, its migration is still baked in. Your working branch — the one you're coding on manually — suddenly has schema changes you didn't make, and things break in ways you can't trace back.
 
-- **Redis is shared.** Bull queues, caching, sessions — all stomped by whoever writes last.
+Resetting from this is painful: figure out which migrations came from which branch, reverse them in order, hope nothing depended on the intermediate state. In practice, people blow away the database and re-migrate from scratch, losing all test data.
 
-### The real cost
+### You can't even run two instances at once
 
-Setting up a truly isolated environment by hand means: spin up 2 Postgres containers on custom ports, a Redis on a custom port, a LocalStack with 22 SQS queues and 3 S3 buckets, create 3 git worktrees, generate `.env` files for each with the right ports, patch config files so services find each other, install dependencies, run migrations. That's 30-45 minutes per environment. Nobody does it. So everyone works on one thing at a time.
+Even for a single second copy, both would try to bind to port 8000 (NestJS), port 8001 (Go API), port 5432 (Postgres). One fails to start. You'd have to manually change ports across 50+ env vars in 3 codebases and make sure all the cross-service references still match.
 
 ---
 
 ## How Vienna Fixes This
 
-One command creates everything:
+Vienna creates a **new environment** for each instance — new databases, new Redis, new queues, new ports — and generates **new `.env` files** in each worktree pointing to that instance's own infrastructure. Instance 1's `sales-tax-api-2/.env` points to Postgres on port 5501. Instance 2's points to port 5502. Different containers, different data, different migration histories. Completely independent.
+
+One command does all of it:
 
 ```bash
 vienna spawn --ticket PLAT-2086 --branch main
@@ -42,16 +44,16 @@ This:
 
 1. Fetches the ticket from Linear (title, description, priority, comments)
 2. Creates a new branch from `main` using Linear's suggested branch name
-3. Creates git worktrees for all 3 repos on that branch
-4. Starts isolated Docker containers — its own Postgres (x2), Redis, and LocalStack
-5. Generates `.env` files with instance-specific ports and URLs for every service
+3. Creates git worktrees for all 3 codebases on that branch
+4. Spins up isolated Docker containers — its own Postgres (x2), Redis, and LocalStack
+5. Generates `.env` files **in each worktree** with instance-specific ports, DB URLs, queue ARNs — so the three services within this instance find each other and nothing else
 6. Installs all dependencies (npm, pnpm, go modules)
-7. Runs all migrations (Prisma for NestJS, Atlas for Go)
+7. Runs all migrations against **this instance's databases only** (Prisma for NestJS, Atlas for Go)
 8. Starts the NestJS backend, Go API, and Enterprise frontend
 9. Opens a new AI agent chat in Cursor with the ticket context
 10. The agent reads the ticket and starts solving
 
-Each environment gets unique ports. No collisions. Run 5 simultaneously.
+Each ticket gets its own databases with its own migration history. Agents on different tickets never touch each other's data. Your working branch stays clean.
 
 ---
 
@@ -180,18 +182,15 @@ Then Vienna opens a new agent chat in your current Cursor window, pastes the tic
 
 ---
 
-## Why Not Just Use Docker Compose Profiles / Devcontainers / etc.?
+## Why Not Just Use Docker Compose Profiles / Devcontainers / Worktrees Alone?
 
-Those tools solve container isolation. Vienna solves the full-stack problem:
+**Worktrees** give you isolated code but shared environment. Every worktree's `.env` still points to the same database. Migrations from different branches collide.
 
-- **Code isolation** — git worktrees so each agent edits its own files
-- **Database isolation** — separate Postgres instances with independent migration state
-- **Queue isolation** — namespaced SQS queues per instance
-- **Configuration isolation** — auto-generated `.env` files with correct ports everywhere
-- **Service discovery** — services within an instance find each other automatically
-- **AI agent integration** — task context injection and Cursor automation
+**Docker Compose profiles** can spin up extra containers, but they don't generate the `.env` files that make your 3 codebases point to those new containers. You still have to manually rewire 50+ env vars across 3 repos and make sure the services discover each other on the right ports.
 
-A Devcontainer can do some of this. But you'd need a separate Devcontainer config for every instance, and they don't help with the AI agent workflow.
+**Devcontainers** could work in theory, but you'd need a separate config for every instance, and they don't coordinate across 3 repos that need to talk to each other.
+
+Vienna handles the whole thing: worktrees + containers + `.env` generation + service wiring + dependency installation + migrations + AI agent context — in one command.
 
 ---
 
@@ -219,4 +218,4 @@ vienna list
 vienna destroy plat-2086
 ```
 
-Three separate databases. Three separate queue sets. Three separate code checkouts. Three separate running service stacks. No conflicts.
+Three separate databases with three independent migration histories. Three separate queue sets. Three separate code checkouts. Three separate `.env` files all pointing to their own infrastructure. Three running service stacks that don't know about each other. No conflicts. No tangled migrations. No data loss.

@@ -8,29 +8,62 @@ Vienna creates fully isolated development environments for every ticket you work
 
 ## The Problem
 
-### Worktrees alone aren't enough
+### Three codebases that are already hard to run together
 
-You can `git worktree add` to get a second checkout, but that solves maybe 10% of the problem. The real issues:
+The Commenda platform is three separate services that talk to each other:
 
-- **Three codebases, not one.** Commenda has `commenda` (frontend monorepo), `commenda-logical-backend` (NestJS API), and `sales-tax-api-2` (Go microservice). A worktree for one repo is useless without worktrees for all three, configured to talk to each other.
+- `commenda` — frontend monorepo (Next.js apps)
+- `commenda-logical-backend` — NestJS API backend
+- `sales-tax-api-2` — Go microservice (tax calculation engine)
 
-- **Shared infrastructure destroys isolation.** Two worktrees both pointing at the same Postgres means one agent's migration breaks the other's data. Same Redis, same queues — one agent's background job eats the other's messages. Same ports — only one can run at a time.
+Each has its own `.env` file with different configuration — database URLs, Redis hosts, SQS queue ARNs, API ports. The NestJS backend needs to know where the Go API lives. The frontends need to know where the NestJS backend lives. Getting all three running and talking to each other locally is already painful for a single setup.
 
-- **Environment files are a minefield.** Each service has 50+ env vars. Database URLs, Redis hosts, SQS queue ARNs, service-to-service URLs, API keys — all hardcoded to default ports. Changing one and forgetting another means silent failures.
+### The environment is shared — even across worktrees
 
-- **Nobody wants to do this setup manually.** An engineer could theoretically set all this up by hand: create 3 worktrees, spin up 2 Postgres containers on custom ports, Redis on a custom port, LocalStack with 22 queues, generate .env files, patch config files, run migrations. That's 45 minutes of setup per environment. Nobody does it.
+This is the real problem. Say you create a git worktree of `sales-tax-api-2` for a second ticket. You now have two checkouts of the code. But the `.env` file in both checkouts has the same `DATABASE_URL=postgresql://localhost:5432/salestax`. Both point at the **same Postgres instance**.
 
-### What actually happens today
+The same is true for every piece of infrastructure:
+- Both worktrees talk to the same database
+- Both worktrees push to the same SQS queues
+- Both worktrees connect to the same Redis
+- Both worktrees run on the same ports
 
-**Engineer A** is working on filing calculations. **Engineer B** needs to fix a registration bug. They can't both work locally at the same time without stepping on each other's databases. One of them works on staging instead, which is slow, shared, and unreliable.
+**Worktrees give you isolated code. They do not give you an isolated environment.** The `.env` belongs to the codebase, and every worktree inherits the same one.
 
-**AI agents** are even worse. You want two Cursor agents working on two tickets simultaneously. They'd both be mutating the same database, the same files, the same queue messages. So they work sequentially — one at a time — defeating the purpose.
+### Migrations from different branches destroy each other
+
+This is where it gets dangerous. Say you have three tickets, each requiring a database migration:
+
+- Ticket A adds a `filing_status` column to the registrations table
+- Ticket B renames `tax_rate` to `effective_rate` across three tables
+- Ticket C adds a whole new `nexus_rules` table
+
+If all three agents (or you + two agents) run their migrations against the same Postgres, you get a tangled mess:
+
+- The migration history now has changes from three unrelated branches interleaved
+- You can't roll back Ticket A's migration without also rolling back B's and C's
+- If Ticket B gets abandoned, its migration is still baked into the database — you can't cleanly undo it
+- Your working branch (the one you're coding on manually) suddenly has schema changes you didn't make, and things break in ways you can't explain
+
+Once that happens, resetting is extremely painful. You'd have to figure out which migrations came from which branch, manually reverse them in the right order, and hope nothing was dependent on the intermediate state. In practice, people just blow away the database and re-migrate from scratch — losing all their test data.
+
+### And you can't run multiple instances at all
+
+Even if you only want to work on one ticket at a time, you can't run two copies of the stack simultaneously. Both would try to bind to port 8000 for NestJS, port 8001 for the Go API, port 5432 for Postgres. One of them fails to start. You'd have to manually change ports across 50+ env vars in 3 codebases to get a second instance running — and make sure the services still find each other on the new ports.
 
 ---
 
 ## How Vienna Fixes This
 
-### One command, everything isolated
+### Vienna gives each instance its own environment
+
+The key idea: Vienna doesn't just create worktrees — it creates a **complete, isolated environment** for each instance. New databases, new Redis, new queues, new ports. And most importantly, **new `.env` files** in each worktree that point to that instance's own infrastructure.
+
+Instance 1's `sales-tax-api-2/.env` has `DATABASE_URL=postgresql://localhost:5501/salestax`.
+Instance 2's has `DATABASE_URL=postgresql://localhost:5502/salestax`.
+Different Postgres containers, different data, different migration histories. Completely independent.
+
+### One command, everything set up
 
 ```
 vienna spawn --ticket PLAT-2086 --branch main
@@ -40,16 +73,16 @@ This single command:
 
 1. **Fetches the ticket** from Linear (title, description, priority, acceptance criteria)
 2. **Creates a new branch** from `main` using Linear's suggested branch name
-3. **Creates git worktrees** for all three repos on that branch
-4. **Starts isolated infrastructure** — its own Postgres (x2), Redis, and LocalStack with 22 SQS queues and 3 S3 buckets
-5. **Generates .env files** — every service configured with instance-specific ports, database names, queue URLs
-6. **Patches service configs** — NestJS backend.config.ts rewritten so services talk to each other on the right ports
+3. **Creates git worktrees** for all three codebases on that branch
+4. **Spins up isolated infrastructure** — its own Postgres (x2), Redis, and LocalStack with 22 SQS queues and 3 S3 buckets, all on unique ports
+5. **Generates `.env` files** in each worktree pointing to this instance's databases, Redis, queues, and ports — so the services within this instance talk to each other and to nothing else
+6. **Patches service configs** — NestJS `backend.config.ts` rewritten so the backend calls the Go API on the right port
 7. **Installs dependencies** — npm, pnpm, go modules, Prisma client generation
-8. **Runs all migrations** — Prisma for NestJS, Atlas for Go, seeds admin API tokens
-9. **Starts all services** — NestJS backend, Go API, and Enterprise frontend in new terminal tabs
+8. **Runs all migrations** — Prisma for NestJS, Atlas for Go — against this instance's databases only
+9. **Starts all three services** — NestJS backend, Go API, and Enterprise frontend in new terminal tabs
 10. **Opens a new AI agent** in Cursor with full ticket context and starts solving immediately
 
-Each environment gets unique ports. Instance 1 gets Postgres on 5501/5601, Redis on 6401. Instance 2 gets 5502/5602/6402. No collisions. Run five simultaneously.
+Now each ticket has its own databases with its own migration history. An agent working on Ticket A applies migrations to port 5501. An agent on Ticket B applies different migrations to port 5502. They never interfere. Your working branch stays clean.
 
 ### Without a ticket — plain spawn
 
