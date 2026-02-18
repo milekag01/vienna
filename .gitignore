@@ -1,0 +1,6 @@
+# Runtime state — local to each machine
+../.vienna-state/
+../instances/
+
+# OS
+.DS_Store

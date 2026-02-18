@@ -1,0 +1,52 @@
+services:
+  postgres-nestjs:
+    image: ${VIENNA_POSTGRES_IMAGE:-postgres:15}
+    ports:
+      - "${VIENNA_PG_NESTJS_PORT}:5432"
+    environment:
+      POSTGRES_DB: ${VIENNA_PG_NESTJS_DB:-commenda}
+      POSTGRES_USER: ${VIENNA_PG_NESTJS_USER:-commenda}
+      POSTGRES_PASSWORD: ${VIENNA_PG_NESTJS_PASS:-commenda}
+    volumes:
+      - pg-nestjs-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${VIENNA_PG_NESTJS_USER:-commenda}"]
+      interval: 3s
+      timeout: 3s
+      retries: 15
+    restart: unless-stopped
+
+  postgres-go:
+    image: ${VIENNA_POSTGRES_IMAGE:-postgres:15}
+    ports:
+      - "${VIENNA_PG_GO_PORT}:5432"
+    environment:
+      POSTGRES_DB: ${VIENNA_PG_GO_DB:-salestax}
+      POSTGRES_USER: ${VIENNA_PG_GO_USER:-salestax}
+      POSTGRES_PASSWORD: ${VIENNA_PG_GO_PASS:-salestax}
+    volumes:
+      - pg-go-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${VIENNA_PG_GO_USER:-salestax}"]
+      interval: 3s
+      timeout: 3s
+      retries: 15
+    restart: unless-stopped
+
+  redis:
+    image: ${VIENNA_REDIS_IMAGE:-redis:7-alpine}
+    ports:
+      - "${VIENNA_REDIS_PORT}:6379"
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 3s
+      timeout: 3s
+      retries: 10
+    restart: unless-stopped
+
+volumes:
+  pg-nestjs-data:
+  pg-go-data:
+  redis-data:
