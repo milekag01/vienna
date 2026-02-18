@@ -78,6 +78,7 @@ compute_ports() {
     echo "PG_NESTJS_PORT=$((VIENNA_PORT_BASE_PG_NESTJS + offset))"
     echo "PG_GO_PORT=$((VIENNA_PORT_BASE_PG_GO + offset))"
     echo "REDIS_PORT=$((VIENNA_PORT_BASE_REDIS + offset))"
+    echo "LOCALSTACK_PORT=$((VIENNA_PORT_BASE_LOCALSTACK + offset))"
     echo "NESTJS_PORT=$((VIENNA_PORT_BASE_NESTJS + offset))"
     echo "GO_API_PORT=$((VIENNA_PORT_BASE_GO_API + offset))"
     echo "APP_POOL_START=$((VIENNA_PORT_BASE_APP_POOL + offset * VIENNA_APP_POOL_SIZE))"
@@ -96,11 +97,12 @@ get_port() {
     fi
 
     case "$port_name" in
-        pg_nestjs)  echo $((VIENNA_PORT_BASE_PG_NESTJS + offset)) ;;
-        pg_go)      echo $((VIENNA_PORT_BASE_PG_GO + offset)) ;;
-        redis)      echo $((VIENNA_PORT_BASE_REDIS + offset)) ;;
-        nestjs)     echo $((VIENNA_PORT_BASE_NESTJS + offset)) ;;
-        go_api)     echo $((VIENNA_PORT_BASE_GO_API + offset)) ;;
-        *)          log_error "Unknown port name: $port_name"; return 1 ;;
+        pg_nestjs)    echo $((VIENNA_PORT_BASE_PG_NESTJS + offset)) ;;
+        pg_go)        echo $((VIENNA_PORT_BASE_PG_GO + offset)) ;;
+        redis)        echo $((VIENNA_PORT_BASE_REDIS + offset)) ;;
+        localstack)   echo $((VIENNA_PORT_BASE_LOCALSTACK + offset)) ;;
+        nestjs)       echo $((VIENNA_PORT_BASE_NESTJS + offset)) ;;
+        go_api)       echo $((VIENNA_PORT_BASE_GO_API + offset)) ;;
+        *)            log_error "Unknown port name: $port_name"; return 1 ;;
     esac
 }

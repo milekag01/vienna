@@ -26,8 +26,12 @@ env_generate() {
     local pg_nestjs_port=$((VIENNA_PORT_BASE_PG_NESTJS + offset))
     local pg_go_port=$((VIENNA_PORT_BASE_PG_GO + offset))
     local redis_port=$((VIENNA_PORT_BASE_REDIS + offset))
+    local localstack_port=$((VIENNA_PORT_BASE_LOCALSTACK + offset))
     local nestjs_port=$((VIENNA_PORT_BASE_NESTJS + offset))
     local go_api_port=$((VIENNA_PORT_BASE_GO_API + offset))
+
+    local ls_url="http://localhost:${localstack_port}"
+    local sqs_base="${ls_url}/${VIENNA_AWS_ACCOUNT_ID}"
 
     # --- commenda-logical-backend ---
     local clb_dir="$instance_dir/commenda-logical-backend"
@@ -52,7 +56,15 @@ env_generate() {
         _env_set "$clb_target" "SALES_TAX_CLIENT_API_KEY" "$VIENNA_SALES_TAX_API_KEY"
         _env_set "$clb_target" "NODE_ENV" "development"
 
-        log_step "Generated .env for commenda-logical-backend (PG:$pg_nestjs_port, Redis:$redis_port)"
+        # AWS → LocalStack
+        _env_set "$clb_target" "COMMENDA_AWS_ACCESS_KEY" "test"
+        _env_set "$clb_target" "COMMENDA_AWS_SECRET_KEY" "test"
+        _env_set "$clb_target" "COMMENDA_AWS_BUCKET" "commenda-dev"
+        _env_set "$clb_target" "COMMENDA_AWS_AUTO_DELETE_BUCKET" "commenda-auto-delete-dev"
+        _env_set "$clb_target" "AWS_ENDPOINT_URL" "$ls_url"
+        _env_set "$clb_target" "TEXTRACT_QUEUE" "${sqs_base}/textract"
+
+        log_step "Generated .env for commenda-logical-backend (PG:$pg_nestjs_port, Redis:$redis_port, AWS:$localstack_port)"
     fi
 
     # --- sales-tax-api-2 ---
@@ -80,7 +92,38 @@ env_generate() {
         _env_set "$sta_target" "SALES_TAX_CLIENT_API_KEY" "$VIENNA_SALES_TAX_API_KEY"
         _env_set "$sta_target" "ENVIRONMENT" "DEVELOPMENT"
 
-        log_step "Generated .env for sales-tax-api-2 (PG:$pg_go_port, API:$go_api_port)"
+        # AWS → LocalStack
+        _env_set "$sta_target" "AWS_ACCESS_KEY" "test"
+        _env_set "$sta_target" "AWS_ACCESS_SECRET" "test"
+        _env_set "$sta_target" "AWS_ENDPOINT_URL" "$ls_url"
+        _env_set "$sta_target" "AWS_REGION" "$VIENNA_AWS_REGION"
+        _env_set "$sta_target" "AWS_BUCKET" "sales-tax-bucket-dev"
+
+        # SQS queue URLs pointing to LocalStack
+        _env_set "$sta_target" "AWS_WEBHOOK_QUEUE_URL" "${sqs_base}/webhook.fifo"
+        _env_set "$sta_target" "AWS_BULK_UPLOAD_INVOICE_INITIATE_QUEUE_URL" "${sqs_base}/bulk_upload_invoice_initiate"
+        _env_set "$sta_target" "AWS_BULK_UPLOAD_INVOICE_PROCESS_QUEUE_URL" "${sqs_base}/bulk_upload_invoice_process"
+        _env_set "$sta_target" "AWS_BULK_UPLOAD_CUSTOMER_INITIATE_QUEUE_URL" "${sqs_base}/bulk_upload_customer_initiate"
+        _env_set "$sta_target" "AWS_BULK_UPLOAD_CUSTOMER_PROCESS_QUEUE_URL" "${sqs_base}/bulk_upload_customer_process"
+        _env_set "$sta_target" "AWS_BULK_UPLOAD_PRODUCT_INITIATE_QUEUE_URL" "${sqs_base}/bulk_upload_product_initiate"
+        _env_set "$sta_target" "AWS_BULK_UPLOAD_PRODUCT_PROCESS_QUEUE_URL" "${sqs_base}/bulk_upload_product_process"
+        _env_set "$sta_target" "AWS_BULK_DELETE_TRANSACTION_QUEUE_URL" "${sqs_base}/bulk_delete_transaction"
+        _env_set "$sta_target" "AWS_BULK_EXPORT_TRANSACTION_VALIDATION_QUEUE_URL" "${sqs_base}/bulk_export_transaction_validation"
+        _env_set "$sta_target" "AWS_BULK_EXPORT_TRANSACTION_PROCESS_QUEUE_URL" "${sqs_base}/bulk_export_transaction_processing"
+        _env_set "$sta_target" "AWS_BULK_EXPORT_PRODUCT_VALIDATION_QUEUE_URL" "${sqs_base}/bulk_export_product_validation"
+        _env_set "$sta_target" "AWS_BULK_EXPORT_PRODUCT_PROCESSING_QUEUE_URL" "${sqs_base}/bulk_export_product_processing"
+        _env_set "$sta_target" "AWS_ENQUEUE_TAX_BREAKDOWN_GENERATION_URL" "${sqs_base}/tax_breakdown_generation"
+        _env_set "$sta_target" "AWS_TAX_BREAKDOWN_GENERATION_URL" "${sqs_base}/tax_breakdown_generation"
+        _env_set "$sta_target" "AWS_TAX_BREAKDOWN_PROCESS_QUEUE_URL" "${sqs_base}/tax_breakdown_process"
+        _env_set "$sta_target" "AWS_FILING_NUMBERS_AGGREGATION_QUEUE_URL" "${sqs_base}/filing_numbers_aggregation"
+        _env_set "$sta_target" "AWS_ATTACH_INVOICES_TO_FILING_QUEUE_URL" "${sqs_base}/attach_invoices_to_filing"
+        _env_set "$sta_target" "AWS_BULK_EXPORT_TAX_BREAKDOWNS_QUEUE_URL" "${sqs_base}/bulk_export_tax_breakdowns"
+        _env_set "$sta_target" "AWS_TAX_ESTIMATE_RECALCULATION_INITIATE_QUEUE_URL" "${sqs_base}/tax_estimate_recalculation_initiate"
+        _env_set "$sta_target" "AWS_TAX_ESTIMATE_RECALCULATION_PROCESS_QUEUE_URL" "${sqs_base}/tax_estimate_recalculation_process"
+        _env_set "$sta_target" "AWS_NEXUS_SYNC_QUEUE_URL" "${sqs_base}/nexus_sync"
+        _env_set "$sta_target" "AWS_CONTENT_INGESTION_QUEUE_URL" "${sqs_base}/content_ingestion"
+
+        log_step "Generated .env for sales-tax-api-2 (PG:$pg_go_port, API:$go_api_port, AWS:$localstack_port)"
     fi
 
     # --- commenda (Prisma package) ---

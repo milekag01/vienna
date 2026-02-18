@@ -36,6 +36,14 @@ case "$command" in
         source "$VIENNA_DIR/lib/destroy.sh"
         cmd_destroy "$@"
         ;;
+    stop)
+        source "$VIENNA_DIR/lib/stop.sh"
+        cmd_stop "$@"
+        ;;
+    start)
+        source "$VIENNA_DIR/lib/start.sh"
+        cmd_start "$@"
+        ;;
     list|ls)
         source "$VIENNA_DIR/lib/list.sh"
         cmd_list "$@"
@@ -49,10 +57,14 @@ case "$command" in
         echo "Commands:"
         echo "  spawn <name> --branch <branch>   Create isolated environment with worktrees"
         echo "  destroy <name>                    Tear down an instance completely"
+        echo "  stop <name>                       Pause infrastructure (preserves data)"
+        echo "  start <name>                      Resume a stopped instance"
         echo "  list                              Show all instances"
         echo ""
         echo "Examples:"
         echo "  vienna spawn my-feature --branch feature-auth"
+        echo "  vienna stop my-feature"
+        echo "  vienna start my-feature"
         echo "  vienna list"
         echo "  vienna destroy my-feature"
         echo ""

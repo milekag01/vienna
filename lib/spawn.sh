@@ -89,6 +89,7 @@ cmd_spawn() {
     local pg_nestjs_port=$((VIENNA_PORT_BASE_PG_NESTJS + offset))
     local pg_go_port=$((VIENNA_PORT_BASE_PG_GO + offset))
     local redis_port=$((VIENNA_PORT_BASE_REDIS + offset))
+    local localstack_port=$((VIENNA_PORT_BASE_LOCALSTACK + offset))
     local nestjs_port=$((VIENNA_PORT_BASE_NESTJS + offset))
     local go_api_port=$((VIENNA_PORT_BASE_GO_API + offset))
     echo ""
@@ -136,6 +137,7 @@ cmd_spawn() {
         "pg_nestjs": $pg_nestjs_port,
         "pg_go": $pg_go_port,
         "redis": $redis_port,
+        "localstack": $localstack_port,
         "nestjs": $nestjs_port,
         "go_api": $go_api_port
     }
@@ -172,6 +174,7 @@ EOF
     echo "  PostgreSQL (NestJS): localhost:$pg_nestjs_port"
     echo "  PostgreSQL (Go):     localhost:$pg_go_port"
     echo "  Redis:               localhost:$redis_port"
+    echo "  LocalStack (AWS):    localhost:$localstack_port"
     echo "  NestJS backend port: $nestjs_port"
     echo "  Go API port:         $go_api_port"
     echo ""

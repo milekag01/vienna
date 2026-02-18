@@ -46,7 +46,26 @@ services:
       retries: 10
     restart: unless-stopped
 
+  localstack:
+    image: ${VIENNA_LOCALSTACK_IMAGE:-localstack/localstack:latest}
+    ports:
+      - "${VIENNA_LOCALSTACK_PORT}:4566"
+    environment:
+      SERVICES: sqs,s3,sns
+      DEFAULT_REGION: ${VIENNA_AWS_REGION:-us-east-1}
+      DOCKER_HOST: unix:///var/run/docker.sock
+    volumes:
+      - localstack-data:/var/lib/localstack
+      - "${VIENNA_INIT_SCRIPT}:/etc/localstack/init/ready.d/init-aws.sh:ro"
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:4566/_localstack/health | grep -q '\"sqs\": \"running\"'"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+    restart: unless-stopped
+
 volumes:
   pg-nestjs-data:
   pg-go-data:
   redis-data:
+  localstack-data:

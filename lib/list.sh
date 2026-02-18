@@ -21,10 +21,10 @@ cmd_list() {
     fi
 
     echo ""
-    printf "  ${BOLD}%-20s %-20s %-10s %-8s %-8s %-8s %-8s %-8s${NC}\n" \
-        "INSTANCE" "BRANCH" "STATUS" "PG-NEST" "PG-GO" "REDIS" "NESTJS" "GO-API"
-    printf "  %-20s %-20s %-10s %-8s %-8s %-8s %-8s %-8s\n" \
-        "--------" "------" "------" "-------" "-----" "-----" "------" "------"
+    printf "  ${BOLD}%-18s %-18s %-10s %-7s %-7s %-7s %-5s %-7s %-7s${NC}\n" \
+        "INSTANCE" "BRANCH" "STATUS" "PG-NJS" "PG-GO" "REDIS" "AWS" "NESTJS" "GO-API"
+    printf "  %-18s %-18s %-10s %-7s %-7s %-7s %-5s %-7s %-7s\n" \
+        "--------" "------" "------" "------" "-----" "-----" "---" "------" "------"
 
     while IFS= read -r name; do
         local config_file="$VIENNA_STATE/instances/$name/config.json"
@@ -33,6 +33,7 @@ cmd_list() {
         local pg_nestjs="-"
         local pg_go="-"
         local redis="-"
+        local localstack="-"
         local nestjs="-"
         local go_api="-"
 
@@ -41,6 +42,7 @@ cmd_list() {
             pg_nestjs=$(jq -r '.ports.pg_nestjs // "-"' "$config_file")
             pg_go=$(jq -r '.ports.pg_go // "-"' "$config_file")
             redis=$(jq -r '.ports.redis // "-"' "$config_file")
+            localstack=$(jq -r '.ports.localstack // "-"' "$config_file")
             nestjs=$(jq -r '.ports.nestjs // "-"' "$config_file")
             go_api=$(jq -r '.ports.go_api // "-"' "$config_file")
         fi
@@ -54,8 +56,8 @@ cmd_list() {
             status="${DIM}down${NC}"
         fi
 
-        printf "  %-20s %-20s %-10b %-8s %-8s %-8s %-8s %-8s\n" \
-            "$name" "$branch" "$status" "$pg_nestjs" "$pg_go" "$redis" "$nestjs" "$go_api"
+        printf "  %-18s %-18s %-10b %-7s %-7s %-7s %-5s %-7s %-7s\n" \
+            "$name" "$branch" "$status" "$pg_nestjs" "$pg_go" "$redis" "$localstack" "$nestjs" "$go_api"
 
     done <<< "$instances"
 
