@@ -1,19 +1,24 @@
 #!/bin/bash
 # LocalStack init script — runs automatically when the container is healthy
 # Creates all SQS queues and S3 buckets needed by the application
+# Queue/bucket names are prefixed with the instance name for isolation clarity
 
 REGION="${DEFAULT_REGION:-us-east-1}"
+INSTANCE="${VIENNA_INSTANCE_NAME:-default}"
+SAFE="${INSTANCE//-/_}"
 
 echo "=== Vienna LocalStack Init ==="
 echo "Region: $REGION"
+echo "Instance: $INSTANCE (prefix: $SAFE)"
 
-# --- S3 Buckets ---
-for bucket in commenda-dev commenda-auto-delete-dev sales-tax-bucket-dev; do
+# --- S3 Buckets (use instance name with hyphens) ---
+for suffix in commenda-dev commenda-auto-delete-dev sales-tax-bucket-dev; do
+    bucket="${INSTANCE}-${suffix}"
     echo "Creating S3 bucket: $bucket"
     awslocal s3 mb "s3://$bucket" --region "$REGION" 2>/dev/null || true
 done
 
-# --- SQS Queues (standard) ---
+# --- SQS Queues — standard (use safe prefix with underscores) ---
 STANDARD_QUEUES=(
     "bulk_upload_invoice_initiate"
     "bulk_upload_invoice_process"
@@ -39,9 +44,10 @@ STANDARD_QUEUES=(
 )
 
 for queue in "${STANDARD_QUEUES[@]}"; do
-    echo "Creating SQS queue: $queue"
+    full_name="${SAFE}_${queue}"
+    echo "Creating SQS queue: $full_name"
     awslocal sqs create-queue \
-        --queue-name "$queue" \
+        --queue-name "$full_name" \
         --region "$REGION" 2>/dev/null || true
 done
 
@@ -51,9 +57,10 @@ FIFO_QUEUES=(
 )
 
 for queue in "${FIFO_QUEUES[@]}"; do
-    echo "Creating SQS FIFO queue: $queue"
+    full_name="${SAFE}_${queue}"
+    echo "Creating SQS FIFO queue: $full_name"
     awslocal sqs create-queue \
-        --queue-name "$queue" \
+        --queue-name "$full_name" \
         --attributes "FifoQueue=true,ContentBasedDeduplication=false" \
         --region "$REGION" 2>/dev/null || true
 done

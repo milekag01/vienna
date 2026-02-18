@@ -21,10 +21,10 @@ cmd_list() {
     fi
 
     echo ""
-    printf "  ${BOLD}%-18s %-18s %-10s %-7s %-7s %-7s %-5s %-7s %-7s${NC}\n" \
-        "INSTANCE" "BRANCH" "STATUS" "PG-NJS" "PG-GO" "REDIS" "AWS" "NESTJS" "GO-API"
-    printf "  %-18s %-18s %-10s %-7s %-7s %-7s %-5s %-7s %-7s\n" \
-        "--------" "------" "------" "------" "-----" "-----" "---" "------" "------"
+    printf "  ${BOLD}%-18s %-18s %-10s %-7s %-7s %-7s %-5s %-7s %-7s %-6s${NC}\n" \
+        "INSTANCE" "BRANCH" "STATUS" "PG-NJS" "PG-GO" "REDIS" "AWS" "NESTJS" "GO-API" "ENT"
+    printf "  %-18s %-18s %-10s %-7s %-7s %-7s %-5s %-7s %-7s %-6s\n" \
+        "--------" "------" "------" "------" "-----" "-----" "---" "------" "------" "---"
 
     while IFS= read -r name; do
         local config_file="$VIENNA_STATE/instances/$name/config.json"
@@ -36,6 +36,7 @@ cmd_list() {
         local localstack="-"
         local nestjs="-"
         local go_api="-"
+        local enterprise="-"
 
         if [[ -f "$config_file" ]]; then
             branch=$(jq -r '.branch // "-"' "$config_file")
@@ -45,6 +46,7 @@ cmd_list() {
             localstack=$(jq -r '.ports.localstack // "-"' "$config_file")
             nestjs=$(jq -r '.ports.nestjs // "-"' "$config_file")
             go_api=$(jq -r '.ports.go_api // "-"' "$config_file")
+            enterprise=$(jq -r '.ports.enterprise // "-"' "$config_file")
         fi
 
         # Check Docker status
@@ -56,8 +58,8 @@ cmd_list() {
             status="${DIM}down${NC}"
         fi
 
-        printf "  %-18s %-18s %-10b %-7s %-7s %-7s %-5s %-7s %-7s\n" \
-            "$name" "$branch" "$status" "$pg_nestjs" "$pg_go" "$redis" "$localstack" "$nestjs" "$go_api"
+        printf "  %-18s %-18s %-10b %-7s %-7s %-7s %-5s %-7s %-7s %-6s\n" \
+            "$name" "$branch" "$status" "$pg_nestjs" "$pg_go" "$redis" "$localstack" "$nestjs" "$go_api" "$enterprise"
 
     done <<< "$instances"
 

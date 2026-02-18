@@ -20,6 +20,12 @@ ensure_dir() {
     [[ -d "$1" ]] || mkdir -p "$1"
 }
 
+# Sanitize instance name for use in PG database names and SQS queue prefixes
+# Replaces hyphens with underscores (PG doesn't like unquoted hyphens in identifiers)
+safe_name() {
+    echo "${1//-/_}"
+}
+
 ensure_jq() {
     if ! command -v jq &>/dev/null; then
         log_error "jq is required but not installed."

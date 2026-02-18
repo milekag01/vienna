@@ -53,6 +53,7 @@ services:
     environment:
       SERVICES: sqs,s3,sns
       DEFAULT_REGION: ${VIENNA_AWS_REGION:-us-east-1}
+      VIENNA_INSTANCE_NAME: ${VIENNA_INSTANCE_NAME:-default}
       DOCKER_HOST: unix:///var/run/docker.sock
     volumes:
       - localstack-data:/var/lib/localstack

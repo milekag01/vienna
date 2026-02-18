@@ -48,6 +48,14 @@ case "$command" in
         source "$VIENNA_DIR/lib/list.sh"
         cmd_list "$@"
         ;;
+    run)
+        source "$VIENNA_DIR/lib/run.sh"
+        cmd_run "$@"
+        ;;
+    info)
+        source "$VIENNA_DIR/lib/info.sh"
+        cmd_info "$@"
+        ;;
     help|--help|-h)
         echo ""
         log_info "Vienna — Branch-Aware Development Environment Manager"
@@ -59,10 +67,14 @@ case "$command" in
         echo "  destroy <name>                    Tear down an instance completely"
         echo "  stop <name>                       Pause infrastructure (preserves data)"
         echo "  start <name>                      Resume a stopped instance"
+        echo "  run <name> [app ...]              Start apps in new terminal tabs"
+        echo "  info [name]                       Show ports, DB URLs, and connection details"
         echo "  list                              Show all instances"
         echo ""
         echo "Examples:"
         echo "  vienna spawn my-feature --branch feature-auth"
+        echo "  vienna run my-feature                    # Start all apps"
+        echo "  vienna run my-feature clb salestax       # Start specific apps"
         echo "  vienna stop my-feature"
         echo "  vienna start my-feature"
         echo "  vienna list"

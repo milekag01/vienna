@@ -5,6 +5,7 @@ source "$VIENNA_DIR/lib/ports.sh"
 source "$VIENNA_DIR/lib/infra.sh"
 source "$VIENNA_DIR/lib/worktree.sh"
 source "$VIENNA_DIR/lib/env.sh"
+source "$VIENNA_DIR/lib/deps.sh"
 source "$VIENNA_DIR/lib/migrate.sh"
 source "$VIENNA_DIR/lib/context.sh"
 
@@ -92,6 +93,7 @@ cmd_spawn() {
     local localstack_port=$((VIENNA_PORT_BASE_LOCALSTACK + offset))
     local nestjs_port=$((VIENNA_PORT_BASE_NESTJS + offset))
     local go_api_port=$((VIENNA_PORT_BASE_GO_API + offset))
+    local enterprise_port=$((VIENNA_PORT_BASE_APP_POOL + offset * VIENNA_APP_POOL_SIZE))
     echo ""
 
     # Step 2: Create worktrees
@@ -104,7 +106,26 @@ cmd_spawn() {
     fi
     echo ""
 
-    # Step 3: Start Docker infrastructure
+    # Step 3: Apply overlays (patches that can't be committed to main yet)
+    local overlay_dir="$VIENNA_DIR/overlays"
+    if [[ -d "$overlay_dir" ]]; then
+        local has_overlays=false
+        for repo_overlay in "$overlay_dir"/*/; do
+            [[ -d "$repo_overlay" ]] || continue
+            local repo_name
+            repo_name=$(basename "$repo_overlay")
+            local target_dir="$VIENNA_INSTANCES/$name/$repo_name"
+            if [[ -d "$target_dir" ]]; then
+                cp -R "$repo_overlay"/* "$target_dir/" 2>/dev/null && has_overlays=true
+            fi
+        done
+        if $has_overlays; then
+            log_step "Applied file overlays from vienna/overlays/"
+        fi
+    fi
+    echo ""
+
+    # Step 4: Start Docker infrastructure
     log_info "Starting infrastructure..."
     if ! infra_up "$name"; then
         log_error "Failed to start infrastructure. Cleaning up..."
@@ -114,12 +135,12 @@ cmd_spawn() {
     fi
     echo ""
 
-    # Step 4: Generate .env files
+    # Step 5: Generate .env files
     log_info "Generating environment files..."
     env_generate "$name" "$offset"
     echo ""
 
-    # Step 5: Save instance config (before migrations — so destroy works even if migrations fail)
+    # Step 6: Save instance config (before migrations — so destroy works even if migrations fail)
     local instance_config_dir="$VIENNA_STATE/instances/$name"
     ensure_dir "$instance_config_dir"
 
@@ -139,7 +160,8 @@ cmd_spawn() {
         "redis": $redis_port,
         "localstack": $localstack_port,
         "nestjs": $nestjs_port,
-        "go_api": $go_api_port
+        "go_api": $go_api_port,
+        "enterprise": $enterprise_port
     }
 }
 EOF
@@ -153,7 +175,15 @@ EOF
 }
 EOF
 
-    # Step 6: Apply migrations (non-fatal — user can run `vienna migrate` later)
+    # Step 7: Install dependencies (non-fatal — user can install manually)
+    install_deps "$name" || {
+        log_warn "Some dependency installations failed. You can run them manually:"
+        log_warn "  cd $VIENNA_INSTANCES/$name/commenda-logical-backend && npm install"
+        log_warn "  cd $VIENNA_INSTANCES/$name/commenda && pnpm install && npx prisma generate --schema=packages/prisma/schema.prisma"
+    }
+    echo ""
+
+    # Step 8: Apply migrations (non-fatal — user can run `vienna migrate` later)
     log_info "Applying migrations..."
     migrate_all "$name" "$offset" || {
         log_warn "Some migrations failed. You can run them manually later:"
@@ -177,9 +207,7 @@ EOF
     echo "  LocalStack (AWS):    localhost:$localstack_port"
     echo "  NestJS backend port: $nestjs_port"
     echo "  Go API port:         $go_api_port"
-    echo ""
-    echo "  To start working:"
-    echo "    cd $VIENNA_INSTANCES/$name/"
+    echo "  Enterprise port:     $enterprise_port"
     echo ""
     echo "  To start the NestJS backend:"
     echo "    cd $VIENNA_INSTANCES/$name/commenda-logical-backend"
@@ -188,5 +216,9 @@ EOF
     echo "  To start the Go API:"
     echo "    cd $VIENNA_INSTANCES/$name/sales-tax-api-2"
     echo "    make start"
+    echo ""
+    echo "  To start the Enterprise frontend:"
+    echo "    cd $VIENNA_INSTANCES/$name/commenda/apps/enterprise"
+    echo "    pnpm dev -p $enterprise_port"
     echo ""
 }

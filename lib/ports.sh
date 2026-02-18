@@ -81,6 +81,7 @@ compute_ports() {
     echo "LOCALSTACK_PORT=$((VIENNA_PORT_BASE_LOCALSTACK + offset))"
     echo "NESTJS_PORT=$((VIENNA_PORT_BASE_NESTJS + offset))"
     echo "GO_API_PORT=$((VIENNA_PORT_BASE_GO_API + offset))"
+    echo "ENTERPRISE_PORT=$((VIENNA_PORT_BASE_APP_POOL + offset * VIENNA_APP_POOL_SIZE))"
     echo "APP_POOL_START=$((VIENNA_PORT_BASE_APP_POOL + offset * VIENNA_APP_POOL_SIZE))"
     echo "APP_POOL_END=$((VIENNA_PORT_BASE_APP_POOL + offset * VIENNA_APP_POOL_SIZE + VIENNA_APP_POOL_SIZE - 1))"
 }
@@ -103,6 +104,7 @@ get_port() {
         localstack)   echo $((VIENNA_PORT_BASE_LOCALSTACK + offset)) ;;
         nestjs)       echo $((VIENNA_PORT_BASE_NESTJS + offset)) ;;
         go_api)       echo $((VIENNA_PORT_BASE_GO_API + offset)) ;;
+        enterprise)   echo $((VIENNA_PORT_BASE_APP_POOL + offset * VIENNA_APP_POOL_SIZE)) ;;
         *)            log_error "Unknown port name: $port_name"; return 1 ;;
     esac
 }
