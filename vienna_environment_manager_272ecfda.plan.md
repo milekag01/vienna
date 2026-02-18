@@ -2,50 +2,68 @@
 name: Vienna Environment Manager
 overview: 'Design for "Vienna" — a shell-based CLI that manages branch-aware, fully isolated development environments (databases, Redis, queues, ports, env vars) with two modes: `vienna switch` for human developers (infra isolation, shared checkout) and `vienna spawn` for parallel AI agents (full isolation via git worktrees + separate infra).'
 todos:
-  - id: phase1-scaffold
-    content: "Phase 1: Create .vienna/ directory structure, config.yaml, .gitignore entries, vienna.sh entry point, and lib/ shell modules (utils.sh, context.sh, ports.sh)"
+  - id: s1-scaffold
+    content: "Stage 1: Create .vienna/ directory structure, vienna.sh CLI entry point, lib/ shell modules, config.yaml, .gitignore entries"
     status: pending
-  - id: phase1-ports
-    content: "Phase 1: Implement unified port registry with two-tier allocation (reserved infra + dynamic app pool) and `vienna ports` command"
+  - id: s1-ports
+    content: "Stage 1: Implement port registry — allocate unique infra ports (PG x2, Redis) + backend ports (NestJS, Go) per instance"
     status: pending
-  - id: phase1-docker
-    content: "Phase 1: Create docker-compose.base.yaml with parameterized Postgres x2 + Redis, and infra.sh for Docker Compose orchestration"
+  - id: s1-docker
+    content: "Stage 1: Create docker-compose.base.yaml (parameterized Postgres x2 + Redis) and infra.sh to start/stop/destroy Docker infra"
     status: pending
-  - id: phase1-templates
-    content: "Phase 1: Create .env templates with passthrough secrets layer — extract infra-specific vars from existing .env files"
+  - id: s1-worktree
+    content: "Stage 1: Implement worktree.sh — create and remove git worktrees across all 4 repos for a given branch"
     status: pending
-  - id: phase1-switch
-    content: "Phase 1: Implement `vienna switch` — git checkout, infra up, wait for healthy, apply migrations (Prisma + Atlas), generate .env files, write current"
+  - id: s1-templates
+    content: "Stage 1: Create .env templates for commenda-logical-backend, sales-tax-api-2, commenda/packages/prisma + env.sh renderer"
     status: pending
-  - id: phase1-lifecycle
-    content: "Phase 1: Implement `vienna list`, `vienna status`, `vienna stop`, `vienna start`, `vienna destroy`"
+  - id: s1-migrate
+    content: "Stage 1: Implement migrate.sh — run Prisma migrate deploy + Atlas migrate apply against the instance's databases"
     status: pending
-  - id: phase2-worktree
-    content: "Phase 2: Implement worktree.sh for creating/destroying git worktrees across all 4 repos"
+  - id: s1-spawn
+    content: "Stage 1: Implement `vienna spawn <name> --branch <branch>` — full flow: worktrees, Docker up, migrate, env gen, marker file"
     status: pending
-  - id: phase2-spawn
-    content: "Phase 2: Implement `vienna spawn` with --branch and --context flags — worktree creation, infra, migrate, env, task context files"
+  - id: s1-destroy
+    content: "Stage 1: Implement `vienna destroy <name>` — remove worktrees, stop and remove Docker containers + volumes, free ports"
     status: pending
-  - id: phase2-run
-    content: "Phase 2: Implement `vienna run <app>` — dynamic port claiming from app pool and app startup"
+  - id: s1-list
+    content: "Stage 1: Implement `vienna list` — show all instances with name, branch, status, ports, age"
     status: pending
-  - id: phase2-exec-gc
-    content: "Phase 2: Implement `vienna exec` and `vienna gc`"
+  - id: s2-switch
+    content: "Stage 2: Implement `vienna switch <branch>` — human mode with infra-only isolation (no worktrees, shared checkout)"
     status: pending
-  - id: phase3-linear
-    content: "Phase 3: Linear API integration — `vienna spawn --ticket LIN-XXXX` fetches ticket, derives name/branch/context"
+  - id: s2-stop-start
+    content: "Stage 2: Implement `vienna stop` / `vienna start` — pause and resume instance containers"
     status: pending
-  - id: phase3-cursor
-    content: "Phase 3: Auto-generate .cursor/rules/task.mdc in spawned instances and launch Cursor window via CLI"
+  - id: s2-status
+    content: "Stage 2: Implement `vienna status` — detailed view of current instance (ports, migration state, running services)"
     status: pending
-  - id: phase3-snapshots
-    content: "Phase 3: Implement `vienna snapshot` and `vienna restore` using pg_dump/pg_restore"
+  - id: s2-ports-cmd
+    content: "Stage 2: Implement `vienna ports` — full port map across all instances with availability"
     status: pending
-  - id: phase4-polish
-    content: "Phase 4: Health checks, colored output, auto-branch-detection, worktree branch conflict warnings, `vienna reset`"
+  - id: s2-run
+    content: "Stage 2: Implement `vienna run <app>` — dynamic frontend app port claiming and startup"
     status: pending
-  - id: phase4-remote
-    content: "Phase 4: Remote VM provisioning and Linear webhook listener for autonomous agent spawning"
+  - id: s3-snapshots
+    content: "Stage 3: Implement `vienna snapshot` / `vienna restore` using pg_dump/pg_restore"
+    status: pending
+  - id: s3-gc
+    content: "Stage 3: Implement `vienna gc` — garbage collect stale instances older than threshold"
+    status: pending
+  - id: s3-reset
+    content: "Stage 3: Implement `vienna reset` — drop databases, recreate, re-apply all migrations"
+    status: pending
+  - id: s3-polish
+    content: "Stage 3: Health checks (wait for PG healthy), colored output, auto-branch-detection, worktree conflict warnings"
+    status: pending
+  - id: s4-linear
+    content: "Stage 4: Linear API integration — `vienna spawn --ticket LIN-XXXX` fetches ticket, derives name/branch/context"
+    status: pending
+  - id: s4-cursor
+    content: "Stage 4: Auto-generate .cursor/rules/task.mdc in spawned instances and launch Cursor window"
+    status: pending
+  - id: s4-remote
+    content: "Stage 4: Remote VM provisioning and Linear webhook listener for autonomous agent spawning"
     status: pending
 isProject: false
 ---
@@ -659,41 +677,90 @@ esac
 
 Installed via symlink: `ln -s .vienna/vienna.sh /usr/local/bin/vienna` (or added to PATH).
 
-## 15. What To Build First (Phases)
+## 15. Implementation Stages
 
-**Phase 1 — Foundation (the 80% value for human developers)**
+### Stage 1 — Spawn + Worktree + Isolated Environment (MVP)
 
-- Directory structure, config files, `.gitignore` entries
-- Unified port registry with two-tier allocation (`ports.sh`)
-- Instance context detection (`context.sh`)
-- Docker Compose base file
-- Env template system with initial templates (extract from existing `.env` files)
-- `vienna switch` (human mode) — checkout, infra up, migrate, env gen
-- `vienna list`, `vienna status`, `vienna stop`, `vienna start`, `vienna destroy`
-- `vienna ports` — full port map display
+The core loop. After this stage, you can spawn a fully isolated environment for any branch and destroy it when done. This is the foundation everything else builds on.
 
-**Phase 2 — Parallelization + Agent Support**
+**What you can do after Stage 1:**
+```
+vienna spawn my-feature --branch feature-auth    # Create isolated env
+cd instances/my-feature/commenda-logical-backend  # Work in the worktree
+vienna list                                       # See all instances
+vienna destroy my-feature                         # Clean up
+```
 
-- Git worktree management (`worktree.sh`)
-- `vienna spawn` with `--branch` and `--context` flags — worktree creation, infra, migrate, env, task context files
-- `vienna run <app>` — dynamic frontend app port claiming and startup
-- `vienna exec` for running commands in instance context
-- `vienna gc` for cleanup
+**What gets built:**
+- `.vienna/` directory scaffold — CLI entry point (`vienna.sh`), shell library modules (`lib/`), config, `.gitignore`
+- Port registry — allocate unique ports (PG x2, Redis, NestJS, Go API) per instance, track in `registry.json`
+- Docker infrastructure — `docker-compose.base.yaml` (parameterized Postgres x2 + Redis), `infra.sh` to manage lifecycle
+- Git worktree management — `worktree.sh` to create/remove worktrees for all 4 repos on a given branch
+- Env template system — `.env.tmpl` files for each repo, `env.sh` to render them with instance-specific ports
+- Migration runner — `migrate.sh` to run Prisma migrate deploy + Atlas migrate apply against the instance's databases
+- `vienna spawn <name> --branch <branch>` — the full flow: create worktrees, start Docker, wait for healthy DBs, apply migrations, generate `.env` files, write marker file
+- `vienna destroy <name>` — remove worktrees, stop Docker containers, delete volumes, free ports
+- `vienna list` — show all instances with name, branch, status, ports, age
 
-**Phase 3 — Linear + Cursor Integration**
+### Stage 2 — Human Developer Mode + Port Visibility
 
-- Linear API integration — `vienna spawn --ticket LIN-XXXX` fetches ticket, derives name/branch/context
-- Auto-generate `.cursor/rules/task.mdc` in spawned instances
-- Launch Cursor window via `cursor <instance-path>/` CLI
-- `vienna snapshot` / `vienna restore` for database time-travel
+Adds the lighter-weight `switch` mode for human developers who don't need separate code checkouts, plus port management commands.
 
-**Phase 4 — Quality of Life + Automation**
+**What you can do after Stage 2:**
+```
+vienna switch main                 # Infra-only isolation, same code checkout
+vienna switch feature-auth         # Switch to another branch, main's DB preserved
+vienna stop main                   # Pause containers to save resources
+vienna start main                  # Resume
+vienna status                      # Detailed view of current instance
+vienna ports                       # Full port map across all instances
+vienna run enterprise              # Start frontend on next available port
+```
 
-- Health checks after infra start (wait for Postgres healthy before migrating)
-- Colored output, progress indicators
-- Auto-detection of which repos have the target branch (skip others gracefully)
-- `vienna reset` for full database rebuild
-- Future: `vienna spawn --remote` for VM provisioning
+**What gets built:**
+- `vienna switch <branch>` — git checkout in all repos, infra up, migrate, env gen, write `.vienna-state/current`
+- `vienna stop [name]` / `vienna start [name]` — pause and resume Docker containers (data preserved)
+- `vienna status` — detailed info: ports, migration state, running containers, branch
+- `vienna ports` — full port map across all instances (reserved, in-use, available)
+- `vienna run <app>` — claim a port from the app pool, start a frontend app with correct env vars
+
+### Stage 3 — Reliability + Maintenance
+
+Makes the tool production-grade for daily use: snapshots, garbage collection, health checks, polished output.
+
+**What you can do after Stage 3:**
+```
+vienna snapshot before-risky-change   # Save database state
+vienna restore before-risky-change    # Roll back if things break
+vienna reset                          # Full wipe + re-migrate
+vienna gc --older-than 7d             # Clean up stale instances
+```
+
+**What gets built:**
+- `vienna snapshot <label>` / `vienna restore <label>` — pg_dump/pg_restore both databases to named snapshots
+- `vienna gc [--older-than 7d]` — destroy instances older than a threshold
+- `vienna reset` — drop and recreate databases, re-apply all migrations from scratch
+- Health checks — wait for Postgres to be healthy before running migrations (prevents race conditions)
+- Colored output and progress indicators
+- Auto-detection of which repos have the target branch (gracefully skip repos that don't)
+- Worktree branch conflict warnings (if a branch is already checked out in another instance)
+
+### Stage 4 — AI Agent + Linear Integration
+
+The automation layer. AI agents get task context automatically, and Linear tickets can trigger environment creation.
+
+**What you can do after Stage 4:**
+```
+vienna spawn --ticket LIN-4521       # Fetch ticket, create branch, inject context
+# Cursor window opens with task instructions loaded
+```
+
+**What gets built:**
+- Linear API integration — `--ticket LIN-XXXX` flag on spawn: fetch title, description, acceptance criteria
+- Auto-generate `.cursor/rules/task.mdc` in spawned instances so Cursor agents get task context
+- Launch Cursor window at instance directory via `cursor` CLI
+- `--context "description"` flag for manual context injection without Linear
+- Future: remote VM provisioning (`--remote` flag)
 - Future: Linear webhook listener for fully autonomous agent spawning
 
 ## 16. Open Design Questions
